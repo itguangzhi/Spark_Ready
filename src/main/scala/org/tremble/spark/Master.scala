@@ -3,28 +3,60 @@ package org.tremble.spark
 import akka.actor.{Actor, ActorSystem, Props}
 import com.typesafe.config.ConfigFactory
 
+import scala.collection.mutable
+import scala.concurrent.duration._
+
 /**
   * Created by UCS-TREMBLE on 2019-04-16.
   */
-class Master extends Actor{
+class Master(val host:String,val port:Int) extends Actor{
 
   println("创建构造器了")
+  // workerid -》 workerINFO
+  val IdToWorker = new mutable.HashMap[String,WorkerInfo]()
+  // workerinfo -> set 为了排序
+  val workers = new mutable.HashSet[WorkerInfo]()
 //  用于 接受消息
   override def receive = {
 
-    case "connect" =>{
-      println("***** 有一个客户端连接上了master")
-      // 向worker返回消息
-      sender!"connected"
+    case RegisterWorker(id,memory,cores) =>{
+      //判断是否已经注册过了
+      if (!IdToWorker.contains(id)){
+        // 把worker的信息存储下来，保存到内存
+        val workerInfo = new WorkerInfo(id,memory,cores)
+        IdToWorker(id) = workerInfo
+        workers += workerInfo
+        sender!RegisteredMaster(s"akka.tcp://Master_System@$host:$port/user/MasterActer")
+      }
     }
-    case "hello" =>{
-      println("hello 消息已经接收到了")
+    case HeartBeat(workerId) =>{
+      if(IdToWorker.contains(workerId)){
+        val workerinfo = IdToWorker(workerId)
+        //报告worker还活着
+        val currentTime = System.currentTimeMillis()
+        workerinfo.lastHeatBeatTime = currentTime
+      }
 
+    }
+
+    case CheckTimeOutWorker =>{
+      val currentTime = System.currentTimeMillis()
+      val toRemove = workers.filter(x=>currentTime - x.lastHeatBeatTime > CHECK_INTERVAL)
+      for (w<-toRemove){
+        workers -= w
+        IdToWorker -= w.id
+      }
+      println(workers.size)
     }
   }
 
+//  超时检测间隔
+  val CHECK_INTERVAL = 15000
   override def preStart(): Unit = {
     println("preStart 开始试用")
+//    导入隐式转换
+    import context.dispatcher
+    context.system.scheduler.schedule(0.millis,CHECK_INTERVAL.millis,self,CheckTimeOutWorker)
   }
 
 
@@ -48,7 +80,7 @@ object Master{
     val actorSystem = ActorSystem("Master_System",config)
 
     // 创建actor
-    val master = actorSystem.actorOf(Props(new Master),"MasterActer")
+    val master = actorSystem.actorOf(Props(new Master(host,port)),"MasterActer")
 
     master ! "hello"
     actorSystem.awaitTermination()
