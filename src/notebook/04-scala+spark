@@ -1,0 +1,92 @@
+# scala 
+====
+
+### 数据接入
+
+---
+###### scala直接读本地文件
+```scala
+import scala.io.Source
+val lines = Source.fromFile("./The_man_of_property(1).txt","UTF-8").getLines().toList
+```
+其中一定要注意编码问题，会影响数据访问
+###### scala使用spark读本地文件
+```scala
+import org.apache.spark.SparkContext
+val sc = SparkContext()
+val file_path = ""
+val lines = sc.textFile(file_path)
+```
+如果读取hdsf上的文件，要将hdfs的文件路径写完整，类似：
+> hdfs://localhost:9002/input/2017-11-01.txt
+
+### 数据处理
+
+将每个元素进行离散化处理，不必再使用for循环进行遍历，可以使用map方法直接对集合列表中的内容进行处理
+```scala
+val lines1 = lines.map(x=>x.split(" "))
+val lines1 = lines.map(_.split(" ")) //简写方式
+```
+
+将list中嵌套的array的元素提取出来:flatten,并构建一个新的List
+```scala
+val lines2 = lines1.flatten
+val lines2 = lines.flatMap(_.split(" ")) //更简洁的写法
+```
+
+
+```desc
+topN：取前N个值
+需要进行数组的切片：
+指定返回数组中的多少个数
+top10: slice(0,10)
+```
+
+```scala
+baseline：
+lines.flatMap(_.split(" "))
+	.map((_,1)).groupBy(_._1)
+	.map(x=>(x._1,x._2.size))
+	.toList.sortBy(_._2).reverse
+	.slice(0,10)
+```
+
+```scala
+取标点，只取数字和字符
+val p = "[0-9a-zA-Z]+".r
+lines.flatMap(_.split(" "))
+	.map(x=>(p.findAllIn(x).mkString(""),1))
+	.groupBy(_._1)
+	.mapValues(_.size)
+	.toArray
+	.sortWith(_._2>_._2)
+	.slice(0,10)
+```
+
+```scala
+正则：
+python  import re
+p = r'[0-9]+'
+p.findall(s)这个是一个数组
+p.findall(s)[0]
+
+scala：
+val p = "[0-9]+".r
+val s = "546465sfgidg"
+p.findAllIn(s).toArray
+
+p.findAllIn(s).foreach(x=>println(x))
+
+p.findAllIn(s).mkString("")
+mkString("[","","]")
+```
+
+```scala
+tuple求和
+sum = 0
+for i in a:
+	sum += i[1]
+return sum
+
+a.foldLeft(0)(_+_._2)
+```
