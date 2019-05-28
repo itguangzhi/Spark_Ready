@@ -1,0 +1,22 @@
+### 跑任务时出现的参数（临时生效）
+1. 设置HQL执行时每个reduce的大小
+```
+In order to change the average load for a reducer (in bytes):
+  set hive.exec.reducers.bytes.per.reducer=<number> 
+```
+> 属于sql执行过程中，对于进程中每个reduce中reducer的大小，此处表示大小单位是比特
+其中，如果大于<number>，就会多生成一个reduce
+
+
+2. 设置HQL执行时最多使用多少个reduce，表示数量，没有单位
+```
+In order to limit the maximum number of reducers:
+  set hive.exec.reducers.max=<number>
+```
+> 指定总共使用多少个reducer
+
+3. 设置HQL执行时,限制必须开启多少个reduce
+```
+In order to set a constant number of reducers:
+  set mapreduce.job.reduces=<number>
+```

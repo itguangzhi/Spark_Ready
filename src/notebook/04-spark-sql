@@ -1,0 +1,68 @@
+推荐算法需求说明
+
+
+【需求：预测用户类型为test里的用户，下一次订单会购买哪些商品】
+> *分析*：
+user3 用户已经有了5月5号的订单
+我们能拿到5月4号之前的历史所有数据
+通过历史5月4号之前的数据（来预测5月5号买了什么）
+
+
+## spark SQL
+#### Hive SQL 的使用
+
+
+
+
+
+使用hivecontext进行加载数据（spark 1.6，已经过时了，但是就这个版本在这么用）
+```scala
+//【 定义好sparkcontext】
+import org.apache.spark.sql.hive.HiveContext
+val orders = HiveContext("select * from badou.orders")
+val priors = HiveContext("select * from badou.priors")
+val products = HiveContext("select * from badou.products")
+```
+
+### 数据统计
+
+------------
+
+1. 数据计算，每个商品被下单的数量（商品销量）
+```scala
+val productCNT = priors.groupBy("product_id").count().cache
+// [注意这里的cache，可以将计算结果加载到内存中，下次使用不需要重新计算，节省时间]
+```
+注意，以上的数据，不show，不执行，只存的都是映射
+2. 商品被再次购买（reordered=1）的数量（复购量）
+当一个商品的再次购买比例比较高，那下次购买的可能性更高（只针对消耗性商品）
+```scala
+// 方法一
+val reorderedCNT = priors.selectExpr("product_id","cast(reordered as int)")
+.filter(col("reordered")===1)
+.groupBy("product_id")
+.count()
+// 方法二
+val reorderedCNT2 = priors.selectExpr("product_id","cast(reordered as int)")
+.groupBy("product_id")
+.sum("reordered")
+// 方法二中，使用的对reordered字段进行求和计算
+
+//方法三
+val reorderedCNT3 = priors.selectExpr("product_id","cast(reordered as int)")
+.groupBy("product_id")
+.agg(sum("reordered"),avg("reordered"))
+// 为避免后续的计算不单单只求sum，如果还有其他计算如平均值等，用这种方法更方便
+```
+> 其中:
+selectExpr()可以实现SQL语句的方法，类似from之前的部分
+agg()可以实现搭配groupBy一份数据可以聚合多个统计数据计算方法得出多个结果
+
+附加内容
+```scala
+orders.where(col("eval_set")==="test").show()
+// 表示将orders表中，eval_set值为test的数据都展示出来，类似sql中的where【注意三个等号】
+```
+
+
+如何评价推荐算法模型的好坏？使用最新的信息，通过与历史信息出的结果做对比，直接评价模型结果的好坏
