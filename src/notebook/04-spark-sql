@@ -63,6 +63,74 @@ agg()可以实现搭配groupBy一份数据可以聚合多个统计数据计算�
 orders.where(col("eval_set")==="test").show()
 // 表示将orders表中，eval_set值为test的数据都展示出来，类似sql中的where【注意三个等号】
 ```
+3. 结合上面数据统计product再次购买的比率
+```scala
+// 结果我们上面的reorderedCNT3已经求出来了
+// 当然为了展示的更全面一些，将商品销量和复购量都展示出来
+val productSumReordered = priors.selectExpr("product_id","cast(reordered as int)").groupBy("product_id").agg(sum("reordered"),avg("reordered")).withColumnRenamed("sum(reordered)","sum_re").withColumnRenamed("avg(reordered)","avg_re").cache
+val jproduct = productCNT.join(reorderedCNT3,"product_id")
+```
+其中：.withColumnRenamed，表示对dataframe中的列名进行重命名
 
+
+4.UDF的使用：同样也能求出3中的问题
+```scala
+import org.apache.spark.sql.functions._
+val avg_udf = udf((sm:Long,cnt:Long)=>sm.toDouble/cnt.toDouble)
+jproduct.withColumn("mean_re",avg_udf(col("sum_re"),col("count"))).show(5)
+
+```
+5. 用户特征统计——平均购买间隔周期
+用户购买的第一个订单，需要将间隔时间赋值为0
+> orders.selectExpr("*","if(days_since_prior_order='',0,days_since_prior_order) as dspo")
+可以在查询的时候直接过滤
+
+> orders.selectExpr("*","if(days_since_prior_order='',0,days_since_prior_order) as dspo").drop("days_since_prior_order")
+当有部分的数据不需要的时候，可以使用drop，直接丢掉一列数据
+```scala
+// 数据填充（如果数据为空NULL，则填充一个固定值）
+orders.no.fill(0)
+//或者在selectExpr中处理和解决
+```
+```scala
+//完整解决方案
+val ordersNew = orders.selectExpr("*","if(days_since_prior_order='',0,days_since_prior_order) as dspo").drop("days_since_prior_order")
+val userPerDayOrdered = ordersNew.selectExpr("user_id","cast(dspo as int) as dspo").groupBy("user_id").avg("dspo")
+```
+6. 用户特征统计——每个用户总订单的数量
+```scala
+val userAllorders = orders.groupBy("user_id").count().show()
+```
+7. 用户特征统计——每个用户购买的那些商品，购买了多少次
+```scala
+// 用户购买过的商品总量（需要关联订单表）
+orders.join(priors,"order_id").groupBy("user_id").count()
+
+```
+8. 用户特征统计——每个用户购买的商品总量和购买的商品单品总量
+```scala
+val po = orders.join(priors,"order_id").selectExpr("user_id","product_id")
+val rddRecords = po.rdd.map(x=>(x(0).toString,x(1).toString)).groupByKey().mapValues{record =>record.toSet.mkString(",")}
+//将RDD转换为dataFrame 这是版本2以后的操作方法，
+//需要导入隐式转换
+import spark.implicits._
+val adf = poRdd.toDF("user_id","porduct_records")
+
+// 1.6版本这样操纵
+import org.apache.spark.sql.hive.HiveContext.implicits._
+val poDF = rddToDataFrameHolder(rddRecords).toDF("user_id","product_records")
+val userRecordCnt = poDF.selectExpr("*","size(split(product_records,',')) as productCNT")
+```
+```scala
+//优化,在rdd中，可以一次性的将数据转换计算完成，只需要一次groupby即可完成
+在操作rdd的时候，可以一次性，求出两个值。完整代码如下
+val po = orders.join(priors,"order_id").selectExpr("user_id","product_id")
+val rddRecords = po.rdd.map(x=>(x(0).toString,x(1).toString)).groupByKey().mapValues{record =>
+val rc = record.toSet
+(rc.size,rc.mkString(","))}
+import HiveContext.implicits._
+val userRecordCnt = rddToDataFrameHolder(rddRecords).toDF("user_id","tuple").selectExpr("user_id","tuple._1 as prod_dist_cnt","tuple._2 as prod_records")
+
+```
 
 如何评价推荐算法模型的好坏？使用最新的信息，通过与历史信息出的结果做对比，直接评价模型结果的好坏
