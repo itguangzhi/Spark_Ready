@@ -130,7 +130,12 @@ val rc = record.toSet
 (rc.size,rc.mkString(","))}
 import HiveContext.implicits._
 val userRecordCnt = rddToDataFrameHolder(rddRecords).toDF("user_id","tuple").selectExpr("user_id","tuple._1 as prod_dist_cnt","tuple._2 as prod_records")
+```
 
+8. 用户特征统计——每个用户购买的平均每个订单的商品数量
+```scala
+val orderProCNT = priors.groupBy("order_id").count()
+val userProOrderCNT = orders.join(orderProCNT,"order_id").groupBy("user_id").avg("count").withColumnRenamed("avg(count)","avg_op_num")
 ```
 
 如何评价推荐算法模型的好坏？使用最新的信息，通过与历史信息出的结果做对比，直接评价模型结果的好坏
